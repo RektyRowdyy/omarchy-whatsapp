@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# whatsapp-unread — eavesdrop on desktop notifications and emit one line per
+# WhatsApp Web message: "<sender>\t<count>".
+#
+# WhatsApp Web has no server-side inbox to poll — the unread count only ever
+# exists inside the live browser session (a websocket to WhatsApp's servers).
+# The one thing that session always does on a new message is ask the desktop
+# notification daemon to show a toast, so this taps that instead of the page.
+#
+# Only one process may *own* org.freedesktop.Notifications (omarchy-shell
+# does), but D-Bus lets any client become a *monitor* and observe method
+# calls addressed to someone else. That's the seam this uses: dbus-monitor
+# eavesdrops on Notify calls without interfering with the real daemon.
+#
+# Notify's argument order (org.freedesktop.Notifications spec):
+#   app_name, replaces_id, app_icon, summary, body, actions, hints, timeout
+# summary carries the WhatsApp sender name; body carries the WhatsApp URL and
+# an "N new messages" (or single-message preview) line. body can itself
+# contain embedded blank lines, so it has to be accumulated until the
+# terminating "array [" (the actions argument) closes it out.
+set -euo pipefail
+
+APP_NAME_PATTERN="${1:-Chromium|Google Chrome|Brave|Chrome}"
+MATCH_URL="${2:-web.whatsapp.com}"
+
+exec dbus-monitor "interface='org.freedesktop.Notifications',member='Notify'" | awk -v appPattern="$APP_NAME_PATTERN" -v matchUrl="$MATCH_URL" '
+function emit(   n, count) {
+  if (body !~ matchUrl) return
+  if (app !~ ("^(" appPattern ")")) return
+  count = 1
+  if (match(body, /[0-9]+ new messages/)) {
+    n = substr(body, RSTART, RLENGTH)
+    sub(/ new messages/, "", n)
+    count = n + 0
+  }
+  printf "%s\t%d\n", sender, count
+  fflush()
+}
+/member=Notify/ { inNotify = 1; stringIndex = 0; app = ""; sender = ""; body = ""; collectingBody = 0; next }
+inNotify && collectingBody {
+  if ($0 ~ /^[[:space:]]*array \[/) { collectingBody = 0; inNotify = 0; emit(); next }
+  body = body " " $0
+  next
+}
+inNotify && /^[[:space:]]+string "/ {
+  stringIndex++
+  value = $0
+  sub(/^[[:space:]]+string "/, "", value)
+  sub(/"$/, "", value)
+  if (stringIndex == 1) app = value
+  else if (stringIndex == 3) sender = value
+  else if (stringIndex == 4) { body = value; collectingBody = 1 }
+  next
+}
+'
