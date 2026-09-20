@@ -54,6 +54,18 @@ BarWidget {
     if (panelLoader.item.focusOrLaunch() && panelLoader.item.clear) panelLoader.item.clear()
   }
 
+  // Peer-relay entry points for Service's launch guard: the base BarWidget's
+  // broadcast() calls these on every monitor's instance of this widget, and
+  // each hands the call down to its own Service (see Panel.qml's
+  // relayToPeers). Nothing else should call them directly.
+  function armLaunchGuard() {
+    if (panelLoader.item && panelLoader.item.armLaunchGuard) panelLoader.item.armLaunchGuard()
+  }
+
+  function clearLaunchGuard() {
+    if (panelLoader.item && panelLoader.item.clearLaunchGuard) panelLoader.item.clearLaunchGuard()
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 

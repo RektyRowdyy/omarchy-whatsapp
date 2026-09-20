@@ -45,11 +45,20 @@ function sortedSenders(senders) {
 
 // Bar-icon tooltip: one line per sender, or an explicit empty/not-running
 // state so hovering never just shows a blank tooltip.
+//
+// Unread is reported first even when no window is open, because the two
+// states are independent: closing the window without ever focusing it leaves
+// counts standing (nothing was read), and a lit unread dot whose tooltip says
+// only "Not running" reads as a bug. The not-running case is folded into the
+// header line instead of replacing the counts.
 function tooltipFor(senders, total, windowOpen) {
+  if (total > 0) {
+    var lines = sortedSenders(senders).map(function(e) { return e.name + " (" + e.count + ")" })
+    var header = "WhatsApp — " + total + " unread" + (windowOpen ? "" : ", not running")
+    return header + "\n" + lines.join("\n")
+  }
   if (!windowOpen) return "WhatsApp\nNot running — click to open"
-  if (total <= 0) return "WhatsApp\nNo unread messages"
-  var lines = sortedSenders(senders).map(function(e) { return e.name + " (" + e.count + ")" })
-  return "WhatsApp — " + total + " unread\n" + lines.join("\n")
+  return "WhatsApp\nNo unread messages"
 }
 
 // True when a Wayland toplevel's appId identifies the WhatsApp Web window
@@ -81,10 +90,37 @@ function cloneJsonLike(obj) {
   return copy
 }
 
+// Returns a new sender map with `sender` recorded at `count`, never lowering
+// a count already on record for that sender.
+//
+// WhatsApp reissues a chat's notification with its new cumulative count, but
+// only labels it "N new messages" once N > 1 — a single follow-up message
+// arrives as a plain preview, which bin/whatsapp-unread reports as 1. Storing
+// that verbatim would walk "Alice 3" back down to "Alice 1" on the *fourth*
+// unread message. Counts only ever drop when the chat is actually looked at,
+// and that clears the whole map (Service.clear()), so max-wins is safe here.
+function mergeSenderCount(senders, sender, count) {
+  var next = cloneJsonLike(senders)
+  var previous = Object.prototype.hasOwnProperty.call(next, sender) ? next[sender] : 0
+  next[sender] = Math.max(previous, count)
+  return next
+}
+
 // Strips a file:// prefix (e.g. from Qt.resolvedUrl(...).toString()) down to
 // a plain filesystem path. Duplicated from android-mirror's Model.js rather
-// than shared: BarWidget.qml and Service.qml each resolve bin/whatsapp-unread's
-// absolute path independently, with no common ancestor to hoist one onto.
+// than shared: the two plugins have no common ancestor to hoist it onto.
+//
+// Qt.resolvedUrl() percent-encodes, so the result has to be decoded as well:
+// with the plugin under a path containing a space or any non-ASCII character
+// an encoded binPath simply fails to exec, and Service.qml's restart timer
+// then respawns the same doomed command every 5 seconds forever. A path that
+// somehow isn't valid percent-encoding is passed through as-is rather than
+// throwing out of a property binding.
 function stripFileUrl(url) {
-  return String(url).replace(/^file:\/\//, "")
+  var path = String(url).replace(/^file:\/\//, "")
+  try {
+    return decodeURIComponent(path)
+  } catch (e) {
+    return path
+  }
 }

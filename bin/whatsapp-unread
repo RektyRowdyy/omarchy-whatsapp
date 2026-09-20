@@ -23,14 +23,41 @@ set -euo pipefail
 APP_NAME_PATTERN="${1:-Chromium|Google Chrome|Brave|Chrome}"
 MATCH_URL="${2:-web.whatsapp.com}"
 
-exec dbus-monitor "interface='org.freedesktop.Notifications',member='Notify'" | awk -v appPattern="$APP_NAME_PATTERN" -v matchUrl="$MATCH_URL" '
+# Two independent belts, because the obvious `exec dbus-monitor | awk` has
+# neither: it leaves dbus-monitor and awk as grandchildren of the process
+# Quickshell owns, so a signal aimed at this script reaches only bash and the
+# orphaned monitor keeps eavesdropping on the session bus until the next
+# notification makes awk hit SIGPIPE — which on an idle bus may never happen.
+# Every widget reload would leak one monitor.
+#
+#   set -m + trap — job control puts the pipeline in its own process group,
+#     so `kill %1` reaches *both* members on an ordinary teardown.
+#   PR_SET_PDEATHSIG — the trap is useless against SIGKILL, which is exactly
+#     what a QML reload does to a Quickshell Process (observed: a reload
+#     orphaned the pipeline even with the trap in place). The kernel signals
+#     the monitor the moment this script dies, however it died; awk then
+#     reads EOF and exits on its own.
+set -m
+
+# setpriv is util-linux, so it is present on any Omarchy install; degrade to
+# the trap alone rather than failing outright if it somehow isn't.
+pdeath=()
+if command -v setpriv >/dev/null 2>&1; then
+  pdeath=(setpriv --pdeathsig TERM)
+fi
+
+"${pdeath[@]}" dbus-monitor "interface='org.freedesktop.Notifications',member='Notify'" | awk -v appPattern="$APP_NAME_PATTERN" -v matchUrl="$MATCH_URL" '
 function emit(   n, count) {
   if (body !~ matchUrl) return
   if (app !~ ("^(" appPattern ")")) return
   count = 1
-  if (match(body, /[0-9]+ new messages/)) {
+  # Anchored to the start of a body line: WhatsApp puts its grouped-chat
+  # header ("3 new messages") on a line of its own, whereas an unanchored
+  # match would happily read the count out of the message preview itself
+  # ("I got 5 new messages from work" -> 5 unread from one message).
+  if (match(body, /(^|\n)[[:space:]]*[0-9]+ new messages/)) {
     n = substr(body, RSTART, RLENGTH)
-    sub(/ new messages/, "", n)
+    gsub(/[^0-9]/, "", n)
     count = n + 0
   }
   printf "%s\t%d\n", sender, count
@@ -39,7 +66,7 @@ function emit(   n, count) {
 /member=Notify/ { inNotify = 1; stringIndex = 0; app = ""; sender = ""; body = ""; collectingBody = 0; next }
 inNotify && collectingBody {
   if ($0 ~ /^[[:space:]]*array \[/) { collectingBody = 0; inNotify = 0; emit(); next }
-  body = body " " $0
+  body = body "\n" $0
   next
 }
 inNotify && /^[[:space:]]+string "/ {
@@ -52,4 +79,7 @@ inNotify && /^[[:space:]]+string "/ {
   else if (stringIndex == 4) { body = value; collectingBody = 1 }
   next
 }
-'
+' &
+
+trap 'kill -TERM %1 2>/dev/null' EXIT INT TERM
+wait %1 || true

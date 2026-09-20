@@ -37,12 +37,14 @@ Left-click focuses the existing WhatsApp window if there is one (matched by
 window class, never title), otherwise launches it with
 `omarchy-launch-webapp https://web.whatsapp.com/`. If WhatsApp isn't running
 the icon renders dimmed. Repeat clicks within a few seconds of a launch don't
-spawn a second window.
+spawn a second window — including a click on another monitor's copy of the
+icon. If the launch itself fails, the next click retries immediately rather
+than waiting that window out.
 
 ## Requirements
 
 - Chromium's WhatsApp Web web-app (`~/.local/share/applications/WhatsApp.desktop`,
-  installed by Omarchy's `omarchy-launch-webapp`) with notification
+  installed by Omarchy's `omarchy-webapp-install`) with notification
   permission granted for `web.whatsapp.com`.
 - `dbus-monitor` (part of `dbus`, present on any Omarchy install).
 
@@ -59,8 +61,10 @@ process**, with your own user's permissions. What this one does with them:
   leaves the machine; the only output is one `sender<TAB>count` line per
   matching notification, on stdout, read by the widget.
 - The only other command it ever spawns is `omarchy-launch-webapp
-  https://web.whatsapp.com/`, via `Quickshell.execDetached`, and only on a
-  click when no WhatsApp window is open.
+  https://web.whatsapp.com/`, and only on a click when no WhatsApp window is
+  open. It runs as a tracked child purely so a failed launch is noticed; the
+  script itself `exec setsid`s the browser away, so nothing about the browser's
+  lifetime is tied to the shell.
 - No installer, no remote build step, no network requests of its own, and no
   second Quickshell process.
 
@@ -118,7 +122,9 @@ That's the whole cleanup. The widget leaves the bar with it, and the three
 settings above live in the bar's own entry in `~/.config/omarchy/shell.json`,
 so they go too. The plugin writes no state of its own anywhere else — unread
 counts only ever exist in memory (see Known limitations), and the
-`dbus-monitor` it spawns dies with the shell process that owns it.
+`dbus-monitor` it spawns is torn down with the widget: `bin/whatsapp-unread`
+runs the monitor in its own process group and traps `EXIT`/`INT`/`TERM`, so
+both the monitor and its `awk` stage go away when the shell stops the watcher.
 
 Removing the plugin does not touch the Chromium WhatsApp Web web-app itself.
 If you want that gone as well, delete

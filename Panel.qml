@@ -38,6 +38,19 @@ Panel {
   function focusOrLaunch() { return svc.focusOrLaunch() }
   function clear() { svc.clear() }
 
+  // The launch guard lives in Service, and the bar builds one Panel — so one
+  // Service — per monitor, so a guard armed here says nothing about a click
+  // on the next monitor's icon: unrelayed, two such clicks inside the guard
+  // window launch two WhatsApp windows. The base BarWidget's broadcast() runs
+  // a method on every live instance of this module, which is exactly the
+  // reach needed; these two are its entry points on this side.
+  function armLaunchGuard() { svc.armLaunchGuard() }
+  function clearLaunchGuard() { svc.clearLaunchGuard() }
+
+  function relayToPeers(method) {
+    if (hostWidget && typeof hostWidget.broadcast === "function") hostWidget.broadcast(method)
+  }
+
   property int cursorIndex: 0
   property bool cursorActive: false
 
@@ -88,6 +101,8 @@ Panel {
 
   Connections {
     target: svc
+    function onLaunchStarted() { root.relayToPeers("armLaunchGuard") }
+    function onLaunchFailed() { root.relayToPeers("clearLaunchGuard") }
     function onSendersChanged() {
       if (root.cursorIndex >= root.senderList.length) root.cursorIndex = Math.max(0, root.senderList.length - 1)
     }
@@ -126,7 +141,7 @@ Panel {
             id: heroGlyph
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            text: ""
+            text: ""
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.display
@@ -153,7 +168,12 @@ Panel {
 
             Text {
               width: parent.width
-              text: !root.windowOpen ? "Not running" : (root.total > 0 ? (root.total + " unread") : "No unread messages")
+              // Same precedence as Model.tooltipFor: unread counts stand on
+              // their own, since closing the window without focusing it
+              // leaves them uncleared and the list below still shows them.
+              text: root.total > 0
+                ? (root.total + " unread" + (root.windowOpen ? "" : ", not running"))
+                : (root.windowOpen ? "No unread messages" : "Not running")
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -204,7 +224,7 @@ Panel {
 
         ActionRow {
           width: parent.width
-          icon: ""
+          icon: "󰏌"
           title: "Open WhatsApp"
           subtitle: root.windowOpen ? "Focus the window and clear unread" : "Launch WhatsApp Web"
           onActivated: root.focusAndClose()

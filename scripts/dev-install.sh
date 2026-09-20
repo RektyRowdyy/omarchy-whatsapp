@@ -22,6 +22,10 @@ fi
 
 mkdir -p "$(dirname -- "$PLUGIN_DEST")"
 cp -r "$PLUGIN_SRC" "$PLUGIN_DEST"
+# The live plugin directory is a deployment, not a checkout: dropping a copy of
+# the repo's history into it doubles its size for nothing and leaves a stale
+# .git that any tooling walking ~/.config/omarchy/plugins can mistake for one.
+rm -rf -- "$PLUGIN_DEST/.git"
 omarchy-plugin-validate "$PLUGIN_DEST"
 echo "Copied to: $PLUGIN_DEST — re-run this script after edits."
 

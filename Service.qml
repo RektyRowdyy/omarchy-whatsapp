@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
@@ -29,6 +28,16 @@ Item {
   readonly property string matchUrl: stringSetting("matchUrl", "web.whatsapp.com")
   readonly property string windowClassPattern: stringSetting("windowClassPattern", "whatsapp")
 
+  // Settings are live: the bar re-injects `settings` whenever shell.json
+  // changes, so appNamePattern/matchUrl can change under a running watcher.
+  // Quickshell ignores writes to Process.command while the process is running
+  // (and an already-exec'd pipeline could not pick up a new pattern anyway),
+  // so the watcher has to be torn down and re-exec'd for a new value to take
+  // effect — otherwise two of the three documented settings would silently
+  // be restart-only.
+  onAppNamePatternChanged: restartWatcher()
+  onMatchUrlChanged: restartWatcher()
+
   // name -> latest reported count. Keyed by sender (not appended-to) because
   // WhatsApp reissues a chat's notification with its new cumulative count
   // rather than sending a delta — summing arrivals would overcount every
@@ -44,6 +53,15 @@ Item {
   // as something you must listen for explicitly via Connections, not
   // something a property binding reliably re-evaluates on its own.
   property bool windowOpen: false
+
+  // Set once the children below exist, so a settings change that arrives
+  // mid-construction can't reach watcherProcess before it is created. Until
+  // then there is nothing to restart: the watcher's first exec already picks
+  // up whatever settings are in hand.
+  property bool watcherReady: false
+  // True while a restart is deliberate, so onExited re-execs immediately
+  // instead of going through the crash-recovery delay.
+  property bool watcherRestarting: false
 
   function refreshWindowState() {
     root.windowOpen = anyWhatsAppToplevelOpen()
@@ -63,6 +81,12 @@ Item {
     var value = setting(name, fallback)
     return value === "" ? fallback : String(value)
   }
+
+  // Raised when this instance actually starts a launch, and when that launch
+  // turns out to have failed. Panel.qml relays both to the other monitors'
+  // instances (see armLaunchGuard/clearLaunchGuard there).
+  signal launchStarted()
+  signal launchFailed()
 
   function clear() {
     root.senders = ({})
@@ -111,17 +135,46 @@ Item {
       return true
     }
     if (launchGuard.running) return false
-    launchGuard.restart()
-    Quickshell.execDetached(["omarchy-launch-webapp", "https://web.whatsapp.com/"])
+    armLaunchGuard()
+    root.launchStarted()
+    if (!launchProcess.running) launchProcess.running = true
     return false
   }
 
+  function armLaunchGuard() {
+    launchGuard.restart()
+  }
+
+  function clearLaunchGuard() {
+    launchGuard.stop()
+  }
+
   // A new window takes a moment to show up as a toplevel, so without this a
-  // double click (or a click on each monitor's icon — the bar renders one
-  // Service per monitor) would launch two windows before the first appears.
+  // double click would launch two windows before the first appears. The bar
+  // renders one Service per monitor, each with its own guard, so a click on
+  // another monitor's icon is covered by Panel.qml relaying launchStarted to
+  // every instance rather than by this Timer alone.
   Timer {
     id: launchGuard
     interval: 8000
+  }
+
+  // omarchy-launch-webapp ends in `exec setsid uwsm-app ...`, so the browser
+  // is detached from this process the instant it starts: running it as a
+  // tracked Process rather than Quickshell.execDetached costs nothing in
+  // lifetime terms and buys the one thing execDetached cannot give — the exit
+  // status. Without it a failed launch (no supported browser, missing
+  // .desktop entry) is invisible, and the guard goes on swallowing every
+  // click for its full 8 seconds with nothing to show for them.
+  Process {
+    id: launchProcess
+    command: ["omarchy-launch-webapp", "https://web.whatsapp.com/"]
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode === 0) return
+      console.warn("whatsapp: omarchy-launch-webapp exited " + exitCode + "; clearing the launch guard so the next click retries")
+      root.clearLaunchGuard()
+      root.launchFailed()
+    }
   }
 
   // Auto-clear when WhatsApp itself gains focus — the badge tracks
@@ -146,7 +199,23 @@ Item {
   // An initial read that's briefly stale (toplevels not yet enumerated) just
   // shows the icon dimmed for a moment, corrected the instant the real list
   // arrives, so it's fine to read eagerly here.
-  Component.onCompleted: root.refreshWindowState()
+  Component.onCompleted: {
+    root.refreshWindowState()
+    root.watcherReady = true
+  }
+
+  // Tears the watcher down so onExited can re-exec it with the current
+  // command. Quickshell only reads Process.command at start, so this is the
+  // only way a settings change reaches the running pipeline.
+  function restartWatcher() {
+    if (!root.watcherReady) return
+    if (!watcherProcess.running) {
+      watcherProcess.running = true
+      return
+    }
+    root.watcherRestarting = true
+    watcherProcess.running = false
+  }
 
   Process {
     id: watcherProcess
@@ -156,15 +225,23 @@ Item {
       onRead: function(line) {
         var parsed = Model.parseWatcherLine(line)
         if (!parsed) return
-        var next = Model.cloneJsonLike(root.senders)
-        next[parsed.sender] = parsed.count
-        root.senders = next
+        root.senders = Model.mergeSenderCount(root.senders, parsed.sender, parsed.count)
       }
     }
     // dbus-monitor should run for the lifetime of the shell; if it dies
     // (session bus hiccup, dbus-monitor missing) restart it after a beat
-    // rather than leaving the widget silently stuck with a stale count.
-    onExited: restartDelay.restart()
+    // rather than leaving the widget silently stuck with a stale count. A
+    // deliberate restart (restartWatcher(), for a settings change) skips the
+    // delay — the process is already gone by the time this fires, and the
+    // new one should be watching again immediately.
+    onExited: {
+      if (root.watcherRestarting) {
+        root.watcherRestarting = false
+        watcherProcess.running = true
+      } else {
+        restartDelay.restart()
+      }
+    }
   }
 
   Timer {
