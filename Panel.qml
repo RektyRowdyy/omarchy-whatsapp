@@ -11,7 +11,7 @@ import "Model.js" as Model
 // below) — this file only holds layout and keyboard-navigation state,
 // matching the Panel+Service split android-mirror and the shell's own
 // plugins/panels/tailscale use. `senders`, `total`, `tooltipText`,
-// `windowOpen`, `focusOrNotify`, and `clear` are re-exposed on root because
+// `windowOpen`, `focusOrLaunch`, and `clear` are re-exposed on root because
 // BarWidget.qml reaches into `panelLoader.item.*` directly (it has no
 // reference to `svc`).
 Panel {
@@ -35,7 +35,7 @@ Panel {
   readonly property bool windowOpen: svc.windowOpen
   readonly property var senderList: Model.sortedSenders(svc.senders)
 
-  function focusOrNotify() { return svc.focusOrNotify() }
+  function focusOrLaunch() { return svc.focusOrLaunch() }
   function clear() { svc.clear() }
 
   property int cursorIndex: 0
@@ -75,10 +75,9 @@ Panel {
   }
 
   // Only clears unread state on a real focus — if WhatsApp wasn't open,
-  // focusOrNotify() raised a notification instead of looking at anything,
-  // and nothing was actually read.
+  // focusOrLaunch() started it instead, and nothing was actually read.
   function focusAndClose() {
-    if (svc.focusOrNotify()) svc.clear()
+    if (svc.focusOrLaunch()) svc.clear()
     root.close()
   }
 
@@ -206,9 +205,8 @@ Panel {
         ActionRow {
           width: parent.width
           icon: ""
-          title: root.windowOpen ? "Open WhatsApp" : "WhatsApp isn't running"
-          subtitle: root.windowOpen ? "Focus the window and clear unread" : "Click to get notified instead"
-          opacity: root.windowOpen ? 1.0 : 0.6
+          title: "Open WhatsApp"
+          subtitle: root.windowOpen ? "Focus the window and clear unread" : "Launch WhatsApp Web"
           onActivated: root.focusAndClose()
         }
       }

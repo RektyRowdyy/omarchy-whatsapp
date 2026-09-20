@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "RektyRowdyy",
   "license": "MIT",
-  "description": "WhatsApp Web bar icon with an unread indicator dot. Click to focus (or launch) WhatsApp, right-click for a sender list.",
+  "description": "WhatsApp Web bar icon with an unread indicator dot. Click to open or focus WhatsApp, right-click for a sender list.",
   "homepage": "https://github.com/RektyRowdyy/whatsapp",
   "repository": "https://github.com/RektyRowdyy/whatsapp",
   "kinds": ["bar-widget"],
@@ -14,23 +14,16 @@
   },
   "barWidget": {
     "displayName": "WhatsApp",
-    "description": "Bar icon + unread dot for WhatsApp Web. Click to focus/launch, right-click for senders.",
+    "description": "Bar icon + unread dot for WhatsApp Web. Click to open or focus, right-click for senders.",
     "category": "Communication",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "autoLaunch": true,
       "appNamePattern": "Chromium|Google Chrome|Brave|Chrome",
       "matchUrl": "web.whatsapp.com",
       "windowClassPattern": "whatsapp"
     },
     "schema": [
-      {
-        "key": "autoLaunch",
-        "type": "boolean",
-        "label": "Launch WhatsApp on shell start",
-        "defaultValue": true
-      },
       {
         "key": "appNamePattern",
         "type": "string",

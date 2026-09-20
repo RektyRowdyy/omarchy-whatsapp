@@ -1,8 +1,8 @@
 # WhatsApp
 
 Omarchy bar widget for WhatsApp Web: a bar icon with a plain unread dot,
-dimmed when WhatsApp isn't running. Click to focus it, right-click for a
-list of who's waiting.
+dimmed when WhatsApp isn't running. Click to open or focus it, right-click
+for a list of who's waiting.
 
 ## Why this exists
 
@@ -18,10 +18,10 @@ process may *own* the Notifications name) and emits one `sender<TAB>count`
 line per WhatsApp message.
 
 **This means WhatsApp Web has to be running** — killing the browser tab
-kills the websocket that would ever notify you of anything. On shell start,
-if no WhatsApp window is open, the widget launches one for you
-(`autoLaunch`, on by default); it doesn't force a workspace, so it opens
-wherever your Hyprland window rules put it.
+kills the websocket that would ever notify you of anything. Nothing launches
+at shell start: left-click the icon and it opens WhatsApp if it isn't
+running; it doesn't force a workspace, so it opens wherever your Hyprland
+window rules put it.
 
 The dot lights up on any notification received since you last focused
 WhatsApp and clears the same way — reading on your phone doesn't clear it,
@@ -31,11 +31,11 @@ notifications *seen*, not WhatsApp's own unread total, so a specific number
 next to it would read as more precise than it actually is. Right-click the
 icon for the real per-sender breakdown.
 
-Clicking never launches a new WhatsApp window — only `autoLaunch` on shell
-start does that. If WhatsApp isn't running, the icon renders dimmed and a
-click raises a desktop notification saying so instead of silently starting
-a fresh session behind your back; "take me to WhatsApp" should mean exactly
-that, not "start a new one and hope it's the one you meant."
+Left-click focuses the existing WhatsApp window if there is one (matched by
+window class, never title), otherwise launches it with
+`omarchy-launch-webapp https://web.whatsapp.com/`. If WhatsApp isn't running
+the icon renders dimmed. Repeat clicks within a few seconds of a launch don't
+spawn a second window.
 
 ## Requirements
 
@@ -69,7 +69,6 @@ to these three files before trusting what you see.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `autoLaunch` | `true` | Launch WhatsApp on shell start if no window is open |
 | `appNamePattern` | `Chromium\|Google Chrome\|Brave\|Chrome` | Notification sender app-name filter |
 | `matchUrl` | `web.whatsapp.com` | Notification body substring/regex filter |
 | `windowClassPattern` | `whatsapp` | Window class/app-id pattern used to detect and focus the WhatsApp window |

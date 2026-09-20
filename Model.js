@@ -46,7 +46,7 @@ function sortedSenders(senders) {
 // Bar-icon tooltip: one line per sender, or an explicit empty/not-running
 // state so hovering never just shows a blank tooltip.
 function tooltipFor(senders, total, windowOpen) {
-  if (!windowOpen) return "WhatsApp\nNot running — click to get notified"
+  if (!windowOpen) return "WhatsApp\nNot running — click to open"
   if (total <= 0) return "WhatsApp\nNo unread messages"
   var lines = sortedSenders(senders).map(function(e) { return e.name + " (" + e.count + ")" })
   return "WhatsApp — " + total + " unread\n" + lines.join("\n")

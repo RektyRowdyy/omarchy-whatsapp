@@ -6,8 +6,8 @@ import qs.Commons
 import "Model.js" as Model
 
 // Owns the unread-count watcher process, the resulting sender map, and the
-// window bookkeeping around it (focus-based auto-clear, startup auto-launch,
-// and the windowOpen state the bar icon dims against). Panel.qml binds to
+// window bookkeeping around it (focus-based auto-clear, click-to-focus-or-
+// launch, and the windowOpen state the bar icon dims against). Panel.qml binds to
 // this declaratively and re-exposes what BarWidget.qml needs — the same
 // Service split android-mirror and the shell's own plugins/panels/tailscale
 // use.
@@ -25,7 +25,6 @@ Item {
   property var settings: ({})
 
   readonly property string binPath: Model.stripFileUrl(Qt.resolvedUrl("bin/whatsapp-unread"))
-  readonly property bool autoLaunch: boolSetting("autoLaunch", true)
   readonly property string appNamePattern: stringSetting("appNamePattern", "Chromium|Google Chrome|Brave|Chrome")
   readonly property string matchUrl: stringSetting("matchUrl", "web.whatsapp.com")
   readonly property string windowClassPattern: stringSetting("windowClassPattern", "whatsapp")
@@ -49,12 +48,6 @@ Item {
   function refreshWindowState() {
     root.windowOpen = anyWhatsAppToplevelOpen()
   }
-
-  // Startup auto-launch only ever fires once per shell session — this isn't
-  // a "keep it open forever" supervisor, just a courtesy so a fresh shell
-  // start doesn't leave the widget silently badge-less until you remember
-  // to open WhatsApp yourself.
-  property bool hasAttemptedLaunch: false
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -107,42 +100,28 @@ Item {
   // involved, so it's unaffected by whatever dispatch syntax a given
   // Hyprland build expects.
   //
-  // Deliberately does NOT fall back to launching a new window: a click means
-  // "take me to WhatsApp", and silently spawning a fresh session when the
-  // expected one is missing is a worse answer than saying so plainly. If
-  // there's nothing to focus, this raises a desktop notification instead —
-  // the same channel bin/whatsapp-unread itself watches, so this is the
-  // shell's own notification pipeline used in both directions. Returns
-  // whether it actually focused something, so callers only clear the
-  // unread state when a look genuinely happened.
-  function focusOrNotify() {
+  // If there's no WhatsApp window, launches one — this is the only place
+  // that ever does; nothing launches at shell start. Returns whether it
+  // actually focused an existing window, so callers only clear the unread
+  // state when a look genuinely happened (a fresh launch has nothing read).
+  function focusOrLaunch() {
     var toplevel = findWhatsAppToplevel()
     if (toplevel) {
       toplevel.activate()
       return true
     }
-    Quickshell.execDetached(["notify-send", "-a", "WhatsApp", "WhatsApp isn't running", "Nothing to focus — it'll open automatically next shell start, or launch it from your app grid."])
+    if (launchGuard.running) return false
+    launchGuard.restart()
+    Quickshell.execDetached(["omarchy-launch-webapp", "https://web.whatsapp.com/"])
     return false
   }
 
-  // The bar renders once per monitor, so on a multi-monitor setup this
-  // Service is instantiated once per monitor too — confirmed directly: a
-  // two-monitor session produced two independent Service instances, each
-  // with its own hasAttemptedLaunch, each deciding independently "no
-  // WhatsApp window yet" on a cold shell start and each launching one. A
-  // per-instance boolean can't prevent that; only a lock outside any one
-  // instance's memory can. `mkdir` is atomic at the filesystem level, so
-  // only the first instance to reach it wins the launch — every other
-  // concurrent caller gets "File exists" and `&&` short-circuits before
-  // omarchy-launch-webapp ever runs. The lock lives under XDG_RUNTIME_DIR
-  // (tmpfs, cleared on logout/reboot) so it naturally resets every session,
-  // matching the "once per shell session" intent.
-  function maybeAutoLaunch() {
-    if (root.hasAttemptedLaunch || !root.autoLaunch) return
-    root.hasAttemptedLaunch = true
-    if (anyWhatsAppToplevelOpen()) return
-    Quickshell.execDetached(["bash", "-lc",
-      "mkdir \"${XDG_RUNTIME_DIR:-/tmp}/whatsapp-plugin-autolaunch.lock\" 2>/dev/null && omarchy-launch-webapp https://web.whatsapp.com/"])
+  // A new window takes a moment to show up as a toplevel, so without this a
+  // double click (or a click on each monitor's icon — the bar renders one
+  // Service per monitor) would launch two windows before the first appears.
+  Timer {
+    id: launchGuard
+    interval: 8000
   }
 
   // Auto-clear when WhatsApp itself gains focus — the badge tracks
@@ -161,27 +140,13 @@ Item {
     target: ToplevelManager.toplevels
     function onValuesChanged() {
       root.refreshWindowState()
-      root.maybeAutoLaunch()
     }
   }
 
-  // Checking auto-launch at Component.onCompleted would race Quickshell's
-  // Wayland toplevel enumeration on a cold shell start — this Item can exist
-  // before the compositor has finished reporting already-open windows, which
-  // would read as "no WhatsApp window" and launch a redundant one even
-  // though one was already open. The onValuesChanged listener above is the
-  // real safety net for that (it fires once the list actually settles);
-  // this timer is just a fallback in case the list never changes at all.
-  // windowOpen itself has no such constraint — an initial read that's
-  // briefly stale just shows the icon dimmed for a moment, corrected the
-  // instant the real list arrives, so it's fine to read eagerly here too.
+  // An initial read that's briefly stale (toplevels not yet enumerated) just
+  // shows the icon dimmed for a moment, corrected the instant the real list
+  // arrives, so it's fine to read eagerly here.
   Component.onCompleted: root.refreshWindowState()
-
-  Timer {
-    interval: 1500
-    running: true
-    onTriggered: root.maybeAutoLaunch()
-  }
 
   Process {
     id: watcherProcess

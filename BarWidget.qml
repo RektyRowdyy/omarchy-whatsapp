@@ -46,13 +46,12 @@ BarWidget {
   // Left-click jumps straight to WhatsApp and clears the badge — the badge
   // means "unread since you last looked", so looking is what should clear
   // it, same as this Service does automatically on window focus. If
-  // WhatsApp isn't actually open, focusOrNotify() raises a desktop
-  // notification instead of silently launching a fresh session, and the
-  // badge is deliberately left alone since nothing was actually read.
+  // WhatsApp isn't open, focusOrLaunch() opens it instead, and the badge is
+  // left alone since nothing was actually read yet.
   // Right-click opens the sender list without leaving the bar.
   function focusWhatsApp() {
-    if (!panelLoader.item || !panelLoader.item.focusOrNotify) return
-    if (panelLoader.item.focusOrNotify() && panelLoader.item.clear) panelLoader.item.clear()
+    if (!panelLoader.item || !panelLoader.item.focusOrLaunch) return
+    if (panelLoader.item.focusOrLaunch() && panelLoader.item.clear) panelLoader.item.clear()
   }
 
   implicitWidth: button.implicitWidth
