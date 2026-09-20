@@ -4,6 +4,8 @@ Omarchy bar widget for WhatsApp Web: a bar icon with a plain unread dot,
 dimmed when WhatsApp isn't running. Click to open or focus it, right-click
 for a list of who's waiting.
 
+![panel](preview.png)
+
 ## Why this exists
 
 WhatsApp Web is a linked device holding its own websocket to WhatsApp's
