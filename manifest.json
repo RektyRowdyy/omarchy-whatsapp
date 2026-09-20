@@ -6,8 +6,8 @@
   "author": "RektyRowdyy",
   "license": "MIT",
   "description": "WhatsApp Web bar icon with an unread indicator dot. Click to open or focus WhatsApp, right-click for a sender list.",
-  "homepage": "https://github.com/RektyRowdyy/whatsapp",
-  "repository": "https://github.com/RektyRowdyy/whatsapp",
+  "homepage": "https://github.com/RektyRowdyy/omarchy-whatsapp",
+  "repository": "https://github.com/RektyRowdyy/omarchy-whatsapp",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"

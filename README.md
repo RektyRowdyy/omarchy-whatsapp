@@ -44,14 +44,40 @@ spawn a second window.
   permission granted for `web.whatsapp.com`.
 - `dbus-monitor` (part of `dbus`, present on any Omarchy install).
 
+## Permissions and dependencies
+
+Omarchy plugins run **unsandboxed inside the long-lived `omarchy-shell`
+process**, with your own user's permissions. What this one does with them:
+
+- `bin/whatsapp-unread` runs `dbus-monitor` as a session-bus *monitor*, so the
+  process sees every `org.freedesktop.Notifications.Notify` call on the bus,
+  not only WhatsApp's — that's inherent to how monitoring works, there is no
+  narrower subscription available. The `appNamePattern`/`matchUrl` filtering
+  happens in the `awk` stage afterwards. Nothing is written to disk and nothing
+  leaves the machine; the only output is one `sender<TAB>count` line per
+  matching notification, on stdout, read by the widget.
+- The only other command it ever spawns is `omarchy-launch-webapp
+  https://web.whatsapp.com/`, via `Quickshell.execDetached`, and only on a
+  click when no WhatsApp window is open.
+- No installer, no remote build step, no network requests of its own, and no
+  second Quickshell process.
+
 ## Installation
 
 ```bash
-git clone https://github.com/RektyRowdyy/whatsapp.git
-cd whatsapp
-./scripts/dev-install.sh
-omarchy plugin enable io.github.rektyrowdyy.whatsapp --section right
+omarchy plugin add https://github.com/RektyRowdyy/omarchy-whatsapp.git --enable
 ```
+
+This clones the plugin, validates it, and prompts for a bar section —
+defaulting to `right`. To place it elsewhere, or to enable it later:
+
+```bash
+omarchy plugin enable io.github.rektyrowdyy.whatsapp --section <left|center|right>
+```
+
+Then grant notification permission for `web.whatsapp.com` in the Chromium
+web-app (see Requirements above) — without it nothing ever reaches the
+notification bus and the dot will never light up.
 
 ## Development
 
@@ -79,3 +105,24 @@ to these three files before trusting what you see.
 - Reflects notifications since last open, not WhatsApp's true unread state —
   reading on your phone doesn't clear it.
 - Unread state resets on shell restart (nothing persists it to disk).
+
+## Removal
+
+```bash
+omarchy plugin remove io.github.rektyrowdyy.whatsapp
+```
+
+That's the whole cleanup. The widget leaves the bar with it, and the three
+settings above live in the bar's own entry in `~/.config/omarchy/shell.json`,
+so they go too. The plugin writes no state of its own anywhere else — unread
+counts only ever exist in memory (see Known limitations), and the
+`dbus-monitor` it spawns dies with the shell process that owns it.
+
+Removing the plugin does not touch the Chromium WhatsApp Web web-app itself.
+If you want that gone as well, delete
+`~/.local/share/applications/WhatsApp.desktop` and its Chromium profile
+yourself.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
